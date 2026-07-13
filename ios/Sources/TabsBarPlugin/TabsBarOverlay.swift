@@ -236,6 +236,7 @@ final class TabsBarOverlay: UIViewController, UITabBarDelegate {
     }
     
     /// Image utilities for loading and processing images
+    @MainActor
     private class ImageUtils {
         
         /// Supported image formats

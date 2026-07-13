@@ -4,6 +4,7 @@ import UIKit
 // MARK: - Image Utilities
 
 /// Utility class for image loading, validation, and caching
+@MainActor
 private class ImageUtils {
     
     /// Supported image formats
