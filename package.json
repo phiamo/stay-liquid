@@ -1,6 +1,6 @@
 {
   "name": "stay-liquid",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Native Liquid Glass for Ionic & Capacitor Applications.",
   "license": "MIT",
   "type": "module",
