@@ -1,6 +1,6 @@
 {
   "name": "stay-liquid",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "Native Liquid Glass for Ionic & Capacitor Applications.",
   "license": "MIT",
   "type": "module",
@@ -30,8 +30,7 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
-    "clean": "rimraf dist",
-    "prepare": "tsup"
+    "clean": "rimraf dist"
   },
   "peerDependencies": {
     "@capacitor/core": ">=6.0.0"
