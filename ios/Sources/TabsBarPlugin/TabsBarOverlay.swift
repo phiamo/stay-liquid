@@ -20,6 +20,14 @@ struct ImageIconRing {
     let width: Double?
 }
 
+/// Tab bar minimize behavior (iOS 26+).
+enum TabBarMinimizeBehavior: String {
+    case never
+    case onScrollDown
+    case onScrollUp
+    case automatic
+}
+
 /// Represents a tab item in the tab bar overlay
 struct TabsBarItem {
     /// Unique identifier for the tab
@@ -34,6 +42,8 @@ struct TabsBarItem {
     let imageIcon: ImageIcon?
     /// Optional badge value for the tab
     var badge: TabsBarBadge?
+    /// Optional tab role — `"search"` maps to UISearchTab on iOS 26+.
+    let role: String?
 }
 
 
@@ -44,87 +54,222 @@ enum TabsBarBadge {
     /// Dot badge (typically used for notifications)
     case dot
 }
-/// A view controller that manages a tab bar overlay for Liquid Glass components
-final class TabsBarOverlay: UIViewController, UITabBarDelegate {
+/// Placeholder child VC — JS owns routing; content stays in the Capacitor webview.
+private final class PlaceholderTabContentViewController: UIViewController {
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .clear
+        view.isUserInteractionEnabled = false
+    }
+}
+
+/// A view controller that hosts a UITabBarController overlay for Liquid Glass tab bars.
+final class TabsBarOverlay: UIViewController, UITabBarControllerDelegate {
 
     private(set) var items: [TabsBarItem] = []
     private var idToIndex: [String: Int] = [:]
-    private let tabBar = UITabBar()
+    private let tabBarController = UITabBarController()
+    private var passthroughView: TabsBarPassthroughView?
+    private let accessoryContentView = TabsBarAccessoryContentView()
+    private var minimizeBehavior: TabBarMinimizeBehavior = .never
+
     var onSelected: ((String) -> Void)?
-    
+    var onAccessoryPlayPause: (() -> Void)?
+    var onAccessoryTapped: (() -> Void)?
+    var onAccessoryEnvironmentChanged: ((String) -> Void)?
+
     // Color configuration
     private var selectedIconColor: UIColor?
     private var unselectedIconColor: UIColor?
+
+    private var tabBar: UITabBar { tabBarController.tabBar }
+
+    override func loadView() {
+        let passthrough = TabsBarPassthroughView()
+        passthrough.backgroundColor = .clear
+        passthroughView = passthrough
+        view = passthrough
+    }
 
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .clear
 
-        tabBar.translatesAutoresizingMaskIntoConstraints = false
-        tabBar.delegate = self
-        view.addSubview(tabBar)
+        tabBarController.delegate = self
+        configureGlassTabBar()
+
+        addChild(tabBarController)
+        view.addSubview(tabBarController.view)
+        tabBarController.view.translatesAutoresizingMaskIntoConstraints = false
+        tabBarController.didMove(toParent: self)
+        tabBarController.view.backgroundColor = .clear
+        tabBarController.view.isOpaque = false
 
         NSLayoutConstraint.activate([
-            tabBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            tabBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            tabBar.topAnchor.constraint(equalTo: view.topAnchor),
-            tabBar.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+            tabBarController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            tabBarController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            tabBarController.view.topAnchor.constraint(equalTo: view.topAnchor),
+            tabBarController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
+
+        passthroughView?.tabBar = tabBar
+        passthroughView?.accessoryContentView = accessoryContentView
+
+        accessoryContentView.onPlayPauseTapped = { [weak self] in
+            self?.onAccessoryPlayPause?()
+        }
+        accessoryContentView.onAccessoryTapped = { [weak self] in
+            self?.onAccessoryTapped?()
+        }
+
+        if #available(iOS 26.0, *) {
+            registerForTraitChanges([UITraitTabAccessoryEnvironment.self]) { [weak self] (_: UITraitEnvironment, _: UITraitCollection) in
+                self?.updateAccessoryEnvironment()
+            }
+        }
+    }
+
+    private func configureGlassTabBar() {
+        tabBar.isTranslucent = true
+        // Never paint an opaque bar — that blocks Liquid Glass diffusion.
+        if #available(iOS 15.0, *) {
+            let appearance = UITabBarAppearance()
+            appearance.configureWithTransparentBackground()
+            tabBar.standardAppearance = appearance
+            tabBar.scrollEdgeAppearance = appearance
+        }
+    }
+
+    private func applyMinimizeBehavior(_ behavior: TabBarMinimizeBehavior) {
+        minimizeBehavior = behavior
+        guard #available(iOS 26.0, *) else { return }
+        switch behavior {
+        case .never:
+            tabBarController.tabBarMinimizeBehavior = .never
+        case .onScrollDown:
+            tabBarController.tabBarMinimizeBehavior = .onScrollDown
+        case .onScrollUp:
+            tabBarController.tabBarMinimizeBehavior = .onScrollUp
+        case .automatic:
+            tabBarController.tabBarMinimizeBehavior = .automatic
+        }
     }
 
     /// Updates the tab bar with new items and configuration
-    /// - Parameters:
-    ///   - items: Array of tab items to display
-    ///   - initialId: ID of the tab to select initially
-    ///   - visible: Whether the tab bar should be visible
-    ///   - selectedIconColor: Optional color for selected tab icons
-    ///   - unselectedIconColor: Optional color for unselected tab icons
-    /// - Note: This method should only be called on the main thread
-    func update(items: [TabsBarItem], initialId: String?, visible: Bool, selectedIconColor: UIColor? = nil, unselectedIconColor: UIColor? = nil) {
+    func update(
+        items: [TabsBarItem],
+        initialId: String?,
+        visible: Bool,
+        selectedIconColor: UIColor? = nil,
+        unselectedIconColor: UIColor? = nil,
+        tabBarMinimizeBehavior: TabBarMinimizeBehavior = .never
+    ) {
         self.items = items
         self.selectedIconColor = selectedIconColor
         self.unselectedIconColor = unselectedIconColor
         idToIndex = Dictionary(uniqueKeysWithValues: items.enumerated().map { ($0.element.id, $0.offset) })
 
-        let barItems: [UITabBarItem] = items.enumerated().map { (idx, model) in
-            let item = UITabBarItem(title: model.title ?? "", image: nil, tag: idx)
-            applyBadge(model.badge, to: item)
-            
-            // Load image with priority: imageIcon > systemIcon > image > placeholder
-          self.loadImageForItem(model, tabBarItem: item)
-            
-            return item
+        configureGlassTabBar()
+        applyMinimizeBehavior(tabBarMinimizeBehavior)
+
+        let viewControllers: [UIViewController] = items.enumerated().map { idx, model in
+            createViewController(for: model, at: idx)
         }
-        tabBar.items = barItems
-        
-        // Apply color configuration
+        tabBarController.setViewControllers(viewControllers, animated: false)
+
         applyColorConfiguration()
 
-        if let initialId, let idx = idToIndex[initialId], let items = tabBar.items, idx < items.count {
-            tabBar.selectedItem = items[idx]
+        if let initialId, let idx = idToIndex[initialId] {
+            tabBarController.selectedIndex = idx
         } else {
-            tabBar.selectedItem = tabBar.items?.first
+            tabBarController.selectedIndex = 0
         }
 
         view.isHidden = !visible
     }
 
+    private func createViewController(for model: TabsBarItem, at index: Int) -> UIViewController {
+        let vc = PlaceholderTabContentViewController()
+
+        let item: UITabBarItem
+        if model.role == "search" {
+            // iOS 26+ applies the separated search-tab chrome to the system search item.
+            item = UITabBarItem(tabBarSystemItem: .search, tag: index)
+            item.title = model.title
+        } else {
+            item = UITabBarItem(title: model.title ?? "", image: UIImage(systemName: model.systemIcon), tag: index)
+            applyBadge(model.badge, to: item)
+            loadImageForItem(model, tabBarItem: item)
+        }
+
+        vc.tabBarItem = item
+        return vc
+    }
+
     /// Selects a tab by its ID
-    /// - Parameter id: The ID of the tab to select
     func select(id: String) {
-        guard let idx = idToIndex[id], let items = tabBar.items, idx < items.count else { return }
-        tabBar.selectedItem = items[idx]
-        // Ensure colors are applied after selection change
+        guard let idx = idToIndex[id],
+              let viewControllers = tabBarController.viewControllers,
+              idx < viewControllers.count else { return }
+        tabBarController.selectedIndex = idx
         applyColorConfiguration()
     }
 
     /// Sets a badge value for a specific tab
-    /// - Parameters:
-    ///   - id: The ID of the tab to update
-    ///   - value: The badge value to set (nil to remove badge)
     func setBadge(id: String, value: TabsBarBadge?) {
-        guard let idx = idToIndex[id], let items = tabBar.items, idx < items.count else { return }
-        applyBadge(value, to: items[idx])
+        guard let idx = idToIndex[id],
+              let viewControllers = tabBarController.viewControllers,
+              idx < viewControllers.count,
+              let item = viewControllers[idx].tabBarItem else { return }
+        applyBadge(value, to: item)
+    }
+
+    /// Measured top of the floating tab pill from the overlay view bottom (for JS layout).
+    func tabBarTopOffset() -> CGFloat {
+        tabBar.layoutIfNeeded()
+        return view.bounds.height - tabBar.frame.minY
+    }
+
+    /// Sets or clears the iOS 26 bottom accessory (mini-player slot).
+    func setBottomAccessory(
+        visible: Bool,
+        title: String?,
+        subtitle: String?,
+        isPlaying: Bool,
+        animated: Bool
+    ) {
+        guard #available(iOS 26.0, *) else { return }
+        if visible {
+            accessoryContentView.update(title: title, subtitle: subtitle, isPlaying: isPlaying, inline: isAccessoryInline())
+            let accessory = UITabAccessory(contentView: accessoryContentView)
+            tabBarController.setBottomAccessory(accessory, animated: animated)
+            passthroughView?.accessoryContentView = accessoryContentView
+            updateAccessoryEnvironment()
+        } else {
+            tabBarController.setBottomAccessory(nil, animated: animated)
+            passthroughView?.accessoryContentView = nil
+        }
+    }
+
+    func clearBottomAccessory(animated: Bool) {
+        setBottomAccessory(visible: false, title: nil, subtitle: nil, isPlaying: false, animated: animated)
+    }
+
+    func currentAccessoryEnvironment() -> String {
+        guard #available(iOS 26.0, *) else { return "unknown" }
+        return isAccessoryInline() ? "inline" : "stacked"
+    }
+
+    @available(iOS 26.0, *)
+    private func isAccessoryInline() -> Bool {
+        traitCollection.tabAccessoryEnvironment == .inline
+    }
+
+    @available(iOS 26.0, *)
+    private func updateAccessoryEnvironment() {
+        let environment = currentAccessoryEnvironment()
+        accessoryContentView.setInlineLayout(environment == "inline")
+        onAccessoryEnvironmentChanged?(environment)
     }
 
     /// Applies a badge value to a UITabBarItem
@@ -588,16 +733,15 @@ final class TabsBarOverlay: UIViewController, UITabBarDelegate {
         }
     }
 
-    // MARK: UITabBarDelegate
-    /// Called when a tab is selected by the user
-    /// - Parameters:
-    ///   - tabBar: The tab bar that was selected
-    ///   - item: The tab bar item that was selected
-    func tabBar(_ tabBar: UITabBar, didSelect item: UITabBarItem) {
-        let idx = item.tag
+    // MARK: UITabBarControllerDelegate
+    func tabBarController(_ tabBarController: UITabBarController, didSelect viewController: UIViewController) {
+        let idx = tabBarController.selectedIndex
         guard idx >= 0, idx < items.count else { return }
-        // Ensure colors are applied after selection
         applyColorConfiguration()
         onSelected?(items[idx].id)
+    }
+
+    func tabBarController(_ tabBarController: UITabBarController, shouldSelect viewController: UIViewController) -> Bool {
+        true
     }
 }

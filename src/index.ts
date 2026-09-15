@@ -8,8 +8,13 @@ export type {
   TabsBarPlugin,
   TabsBarConfigureOptions,
   TabItem,
+  TabItemRole,
+  TabBarMinimizeBehavior,
   SafeAreaInsets,
   SetBadgeOptions,
   SelectOptions,
-  BadgeValue
+  BadgeValue,
+  BottomAccessoryOptions,
+  TabAccessoryEnvironment,
+  TabBarMetrics,
 } from "./components/tabs/definitions";

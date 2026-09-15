@@ -29,6 +29,9 @@ export interface ImageIcon {
 /** Loading state for remote images */
 export type ImageLoadingState = "loading" | "loaded" | "error";
 
+/** Tab role — `search` uses the system search tab styling on iOS 26+. */
+export type TabItemRole = "search";
+
 export interface TabItem {
   /** Unique id you use in your router (e.g., 'home') */
   id: string;
@@ -42,7 +45,12 @@ export interface TabItem {
   imageIcon?: ImageIcon;
   /** Optional badge number or 'dot' */
   badge?: BadgeValue;
+  /** Optional tab role — `search` for native search tab pill (iOS 26+). */
+  role?: TabItemRole;
 }
+
+/** iOS 26+ tab bar minimize-on-scroll behavior. */
+export type TabBarMinimizeBehavior = "never" | "onScrollDown" | "onScrollUp" | "automatic";
 
 export interface TabsBarConfigureOptions {
   items: TabItem[];
@@ -54,6 +62,8 @@ export interface TabsBarConfigureOptions {
   selectedIconColor?: string;
   /** Color for unselected tab icons (hex or RGBA format) */
   unselectedIconColor?: string;
+  /** iOS 26+ minimize behavior (default `never` — web scroll forwarding not yet wired). */
+  tabBarMinimizeBehavior?: TabBarMinimizeBehavior;
 }
 
 export interface SelectOptions {
@@ -69,6 +79,25 @@ export interface SafeAreaInsets {
   top: number; bottom: number; left: number; right: number;
 }
 
+export interface BottomAccessoryOptions {
+  /** Show the accessory (default true). Pass false to hide without clearing state. */
+  visible?: boolean;
+  title?: string;
+  subtitle?: string;
+  isPlaying?: boolean;
+  animated?: boolean;
+}
+
+export interface TabAccessoryEnvironment {
+  /** `inline` when minimized tab bar shares a row with the accessory; `stacked` otherwise. */
+  environment: "inline" | "stacked" | "unknown";
+}
+
+export interface TabBarMetrics {
+  /** Distance from overlay bottom to tab pill top (px). Use for `--native-tab-bar-height`. */
+  tabBarTopOffset: number;
+}
+
 export interface TabsBarPlugin {
   configure(options: TabsBarConfigureOptions): Promise<void>;
   show(): Promise<void>;
@@ -76,10 +105,30 @@ export interface TabsBarPlugin {
   select(options: SelectOptions): Promise<void>;
   setBadge(options: SetBadgeOptions): Promise<void>;
   getSafeAreaInsets(): Promise<SafeAreaInsets>;
+  /** iOS 26+ mini-player slot above the tab bar (Apple Music pattern). */
+  setBottomAccessory(options: BottomAccessoryOptions): Promise<void>;
+  clearBottomAccessory(options?: { animated?: boolean }): Promise<void>;
+  getTabAccessoryEnvironment(): Promise<TabAccessoryEnvironment>;
+  getTabBarMetrics(): Promise<TabBarMetrics>;
 
   /** Fires when user taps a tab */
   addListener(
     eventName: "selected",
     listenerFunc: (ev: { id: string }) => void
+  ): Promise<{ remove: () => void }>;
+  /** Fires when user taps play/pause on the bottom accessory. */
+  addListener(
+    eventName: "accessoryPlayPause",
+    listenerFunc: () => void
+  ): Promise<{ remove: () => void }>;
+  /** Fires when user taps the bottom accessory body (open full player). */
+  addListener(
+    eventName: "accessoryTapped",
+    listenerFunc: () => void
+  ): Promise<{ remove: () => void }>;
+  /** Fires when accessory layout switches inline vs stacked. */
+  addListener(
+    eventName: "accessoryEnvironmentChanged",
+    listenerFunc: (ev: TabAccessoryEnvironment) => void
   ): Promise<{ remove: () => void }>;
 }

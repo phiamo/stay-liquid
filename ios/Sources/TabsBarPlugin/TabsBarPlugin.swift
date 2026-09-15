@@ -416,6 +416,8 @@ private struct JSItem: Decodable {
     let imageIcon: JSImageIcon?
     /// Optional badge value for the tab
     let badge: JSBadge?
+    /// Optional tab role (`search` for system search tab styling)
+    let role: String?
 }
 /// Represents different types of badges that can be received from JavaScript
 private enum JSBadge: Decodable {
@@ -450,6 +452,10 @@ public class TabsBarPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "select", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setBadge", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getSafeAreaInsets", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setBottomAccessory", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "clearBottomAccessory", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getTabAccessoryEnvironment", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "getTabBarMetrics", returnType: CAPPluginReturnPromise),
     ]
 
     private var overlayVC: TabsBarOverlay? {
@@ -504,7 +510,8 @@ public class TabsBarPlugin: CAPPlugin, CAPBridgedPlugin {
 
         let initialId = call.getString("initialId")
         let visible = call.getBool("visible") ?? true
-        
+        let minimizeBehavior = TabBarMinimizeBehavior(rawValue: call.getString("tabBarMinimizeBehavior") ?? "never") ?? .never
+
         // Parse color options
         let selectedIconColor = ColorUtils.parseColor(call.getString("selectedIconColor"))
         let unselectedIconColor = ColorUtils.parseColor(call.getString("unselectedIconColor"))
@@ -541,16 +548,16 @@ public class TabsBarPlugin: CAPPlugin, CAPBridgedPlugin {
             return TabsBarItem(
                 id: js.id,
                 title: js.title,
-                systemIcon: js.systemIcon!,
+                systemIcon: js.systemIcon ?? "circle",
                 image: js.image,
                 imageIcon: imageIcon,
-                badge: badge
+                badge: badge,
+                role: js.role
             )
         }
 
         DispatchQueue.main.async {
             self.ensureOverlay()
-            // Ensure overlay is properly initialized before updating
             guard let overlay = self.overlayVC else {
                 self.handleError(call, message: "Failed to initialize overlay")
                 return
@@ -560,7 +567,8 @@ public class TabsBarPlugin: CAPPlugin, CAPBridgedPlugin {
                 initialId: initialId,
                 visible: visible,
                 selectedIconColor: selectedIconColor,
-                unselectedIconColor: unselectedIconColor
+                unselectedIconColor: unselectedIconColor,
+                tabBarMinimizeBehavior: minimizeBehavior
             )
         }
         call.resolve()
@@ -631,7 +639,6 @@ public class TabsBarPlugin: CAPPlugin, CAPBridgedPlugin {
     }
 
     /// Gets the safe area insets for the current view
-    /// - Parameter call: The Capacitor plugin call
     @objc func getSafeAreaInsets(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
             let v = self.bridge?.viewController?.view
@@ -642,15 +649,83 @@ public class TabsBarPlugin: CAPPlugin, CAPBridgedPlugin {
         }
     }
 
+    /// Sets the iOS 26 bottom accessory (mini-player slot above the tab bar).
+    @objc func setBottomAccessory(_ call: CAPPluginCall) {
+        let visible = call.getBool("visible") ?? true
+        let title = call.getString("title")
+        let subtitle = call.getString("subtitle")
+        let isPlaying = call.getBool("isPlaying") ?? false
+        let animated = call.getBool("animated") ?? true
+
+        DispatchQueue.main.async {
+            guard let overlay = self.overlayVC else {
+                self.handleError(call, message: "Overlay not initialized")
+                return
+            }
+            overlay.setBottomAccessory(
+                visible: visible,
+                title: title,
+                subtitle: subtitle,
+                isPlaying: isPlaying,
+                animated: animated
+            )
+        }
+        call.resolve()
+    }
+
+    /// Clears the bottom accessory.
+    @objc func clearBottomAccessory(_ call: CAPPluginCall) {
+        let animated = call.getBool("animated") ?? true
+        DispatchQueue.main.async {
+            guard let overlay = self.overlayVC else {
+                self.handleError(call, message: "Overlay not initialized")
+                return
+            }
+            overlay.clearBottomAccessory(animated: animated)
+        }
+        call.resolve()
+    }
+
+    /// Returns whether the accessory is inline (minimized tab bar) or stacked.
+    @objc func getTabAccessoryEnvironment(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            guard let overlay = self.overlayVC else {
+                call.resolve(["environment": "unknown"])
+                return
+            }
+            call.resolve(["environment": overlay.currentAccessoryEnvironment()])
+        }
+    }
+
+    /// Returns measured tab bar metrics for JS layout (pill top offset).
+    @objc func getTabBarMetrics(_ call: CAPPluginCall) {
+        DispatchQueue.main.async {
+            guard let overlay = self.overlayVC else {
+                call.resolve(["tabBarTopOffset": 60])
+                return
+            }
+            call.resolve(["tabBarTopOffset": overlay.tabBarTopOffset()])
+        }
+    }
+
     /// Ensures the overlay view controller is created and properly configured
     private func ensureOverlay() {
         guard overlayVC == nil else { return }
         guard let hostVC = bridge?.viewController else { return }
 
         let overlay = TabsBarOverlay()
-        overlay.onSelected = { [weak self, weak overlay] id in
-            guard let self = self, let overlay = overlay else { return }
+        overlay.onSelected = { [weak self] id in
+            guard let self = self else { return }
             self.notifyListeners("selected", data: ["id": id])
+        }
+        overlay.onAccessoryPlayPause = { [weak self] in
+            self?.notifyListeners("accessoryPlayPause", data: [:])
+        }
+        overlay.onAccessoryTapped = { [weak self] in
+            self?.notifyListeners("accessoryTapped", data: [:])
+        }
+        overlay.onAccessoryEnvironmentChanged = { [weak self] environment in
+            self?.notifyListeners("accessoryEnvironmentChanged", data: ["environment": environment])
         }
 
         hostVC.addChild(overlay)
@@ -658,10 +733,12 @@ public class TabsBarPlugin: CAPPlugin, CAPBridgedPlugin {
         overlay.view.translatesAutoresizingMaskIntoConstraints = false
         overlay.didMove(toParent: hostVC)
 
+        // Full-screen transparent overlay; passthrough view forwards touches to tab bar only.
         NSLayoutConstraint.activate([
             overlay.view.leadingAnchor.constraint(equalTo: hostVC.view.leadingAnchor),
             overlay.view.trailingAnchor.constraint(equalTo: hostVC.view.trailingAnchor),
-            overlay.view.bottomAnchor.constraint(equalTo: hostVC.view.bottomAnchor)
+            overlay.view.topAnchor.constraint(equalTo: hostVC.view.topAnchor),
+            overlay.view.bottomAnchor.constraint(equalTo: hostVC.view.bottomAnchor),
         ])
 
         self.overlayVC = overlay

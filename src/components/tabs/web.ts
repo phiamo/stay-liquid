@@ -7,7 +7,10 @@ import type {
   SafeAreaInsets,
   TabItem,
   ImageIcon,
-  ImageLoadingState
+  ImageLoadingState,
+  BottomAccessoryOptions,
+  TabAccessoryEnvironment,
+  TabBarMetrics
 } from "./definitions";
 import { isValidColor } from "./color-utils";
 
@@ -274,5 +277,21 @@ export class TabsBarWeb extends WebPlugin implements TabsBarPlugin {
   
   async getSafeAreaInsets(): Promise<SafeAreaInsets> {
     return { top: 0, bottom: 0, left: 0, right: 0 };
+  }
+
+  async setBottomAccessory(options: BottomAccessoryOptions): Promise<void> {
+    console.log('TabsBar: setBottomAccessory()', options);
+  }
+
+  async clearBottomAccessory(): Promise<void> {
+    console.log('TabsBar: clearBottomAccessory()');
+  }
+
+  async getTabAccessoryEnvironment(): Promise<TabAccessoryEnvironment> {
+    return { environment: 'unknown' };
+  }
+
+  async getTabBarMetrics(): Promise<TabBarMetrics> {
+    return { tabBarTopOffset: 0 };
   }
 }
