@@ -94,8 +94,10 @@ export interface TabAccessoryEnvironment {
 }
 
 export interface TabBarMetrics {
-  /** Distance from overlay bottom to tab pill top (px). Use for `--native-tab-bar-height`. */
+  /** Distance from overlay bottom to accessory top (if present) or tab pill top (px). Use for `--native-tab-bar-height`. */
   tabBarTopOffset: number;
+  /** Height of the bottom accessory when visible (0 otherwise). */
+  accessoryHeight: number;
 }
 
 export interface TabsBarPlugin {

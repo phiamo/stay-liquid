@@ -701,10 +701,13 @@ public class TabsBarPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func getTabBarMetrics(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
             guard let overlay = self.overlayVC else {
-                call.resolve(["tabBarTopOffset": 60])
+                call.resolve(["tabBarTopOffset": 60, "accessoryHeight": 0])
                 return
             }
-            call.resolve(["tabBarTopOffset": overlay.tabBarTopOffset()])
+            call.resolve([
+                "tabBarTopOffset": overlay.tabBarTopOffset(),
+                "accessoryHeight": overlay.accessoryHeight(),
+            ])
         }
     }
 

@@ -257,7 +257,7 @@ var init_web = __esm({
         return { environment: "unknown" };
       }
       async getTabBarMetrics() {
-        return { tabBarTopOffset: 0 };
+        return { tabBarTopOffset: 0, accessoryHeight: 0 };
       }
     };
   }

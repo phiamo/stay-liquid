@@ -72,6 +72,7 @@ final class TabsBarOverlay: UIViewController, UITabBarControllerDelegate {
     private var passthroughView: TabsBarPassthroughView?
     private let accessoryContentView = TabsBarAccessoryContentView()
     private var minimizeBehavior: TabBarMinimizeBehavior = .never
+    private var isAccessoryVisible = false
 
     var onSelected: ((String) -> Void)?
     var onAccessoryPlayPause: (() -> Void)?
@@ -224,10 +225,27 @@ final class TabsBarOverlay: UIViewController, UITabBarControllerDelegate {
         applyBadge(value, to: item)
     }
 
-    /// Measured top of the floating tab pill from the overlay view bottom (for JS layout).
+    /// Measured top of chrome from the overlay view bottom (accessory if present, else tab pill).
     func tabBarTopOffset() -> CGFloat {
+        view.layoutIfNeeded()
         tabBar.layoutIfNeeded()
+        accessoryContentView.layoutIfNeeded()
+
+        if isAccessoryVisible {
+            let accessoryFrame = accessoryContentView.convert(accessoryContentView.bounds, to: view)
+            if accessoryFrame.minY > 0 && accessoryFrame.minY < view.bounds.height {
+                return view.bounds.height - accessoryFrame.minY
+            }
+        }
+
         return view.bounds.height - tabBar.frame.minY
+    }
+
+    /// Height of the bottom accessory content when visible (0 otherwise).
+    func accessoryHeight() -> CGFloat {
+        guard isAccessoryVisible else { return 0 }
+        accessoryContentView.layoutIfNeeded()
+        return accessoryContentView.bounds.height
     }
 
     /// Sets or clears the iOS 26 bottom accessory (mini-player slot).
@@ -240,12 +258,14 @@ final class TabsBarOverlay: UIViewController, UITabBarControllerDelegate {
     ) {
         guard #available(iOS 26.0, *) else { return }
         if visible {
+            isAccessoryVisible = true
             accessoryContentView.update(title: title, subtitle: subtitle, isPlaying: isPlaying, inline: isAccessoryInline())
             let accessory = UITabAccessory(contentView: accessoryContentView)
             glassTabBarController.setBottomAccessory(accessory, animated: animated)
             passthroughView?.accessoryContentView = accessoryContentView
             updateAccessoryEnvironment()
         } else {
+            isAccessoryVisible = false
             glassTabBarController.setBottomAccessory(nil, animated: animated)
             passthroughView?.accessoryContentView = nil
         }
