@@ -655,6 +655,7 @@ public class TabsBarPlugin: CAPPlugin, CAPBridgedPlugin {
         let title = call.getString("title")
         let subtitle = call.getString("subtitle")
         let isPlaying = call.getBool("isPlaying") ?? false
+        let artworkUrl = call.getString("artworkUrl")
         let animated = call.getBool("animated") ?? true
 
         DispatchQueue.main.async {
@@ -667,7 +668,8 @@ public class TabsBarPlugin: CAPPlugin, CAPBridgedPlugin {
                 title: title,
                 subtitle: subtitle,
                 isPlaying: isPlaying,
-                animated: animated
+                animated: animated,
+                artworkUrl: artworkUrl
             )
         }
         call.resolve()
@@ -701,12 +703,19 @@ public class TabsBarPlugin: CAPPlugin, CAPBridgedPlugin {
     @objc func getTabBarMetrics(_ call: CAPPluginCall) {
         DispatchQueue.main.async {
             guard let overlay = self.overlayVC else {
-                call.resolve(["tabBarTopOffset": 60, "accessoryHeight": 0])
+                call.resolve([
+                    "tabBarTopOffset": 60,
+                    "accessoryHeight": 0,
+                    "placement": "bottom",
+                    "tabBarTopInset": 0,
+                ])
                 return
             }
             call.resolve([
                 "tabBarTopOffset": overlay.tabBarTopOffset(),
                 "accessoryHeight": overlay.accessoryHeight(),
+                "placement": overlay.tabBarPlacement(),
+                "tabBarTopInset": overlay.tabBarTopInset(),
             ])
         }
     }

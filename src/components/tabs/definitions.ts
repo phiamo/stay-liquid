@@ -86,6 +86,8 @@ export interface BottomAccessoryOptions {
   subtitle?: string;
   isPlaying?: boolean;
   animated?: boolean;
+  /** Remote http(s), file://, or data URI for accessory artwork. */
+  artworkUrl?: string;
 }
 
 export interface TabAccessoryEnvironment {
@@ -94,10 +96,14 @@ export interface TabAccessoryEnvironment {
 }
 
 export interface TabBarMetrics {
-  /** Distance from overlay bottom to accessory top (if present) or tab pill top (px). Use for `--native-tab-bar-height`. */
+  /** Distance from overlay bottom to bottom chrome top (accessory or bottom tab pill). 0 if the tab bar is at the top. */
   tabBarTopOffset: number;
   /** Height of the bottom accessory when visible (0 otherwise). */
   accessoryHeight: number;
+  /** `top` on iPad regular width; `bottom` for the floating pill. */
+  placement: "top" | "bottom";
+  /** Extra padding below the status bar so web headers sit under a top-placed tab bar. */
+  tabBarTopInset: number;
 }
 
 export interface TabsBarPlugin {

@@ -1,16 +1,33 @@
 import UIKit
 
 /// Native mini-player style content hosted in UITabAccessory (iOS 26+).
-final class TabsBarAccessoryContentView: UIView {
+final class TabsBarAccessoryContentView: UIView, UIGestureRecognizerDelegate {
     var onPlayPauseTapped: (() -> Void)?
     var onAccessoryTapped: (() -> Void)?
 
+    private static let swipeUpThreshold: CGFloat = 36
+    private static let swipeMaxHorizontalDrift: CGFloat = 48
+    private static let stackedContentInsets = NSDirectionalEdgeInsets(top: 8, leading: 18, bottom: 8, trailing: 16)
+    private static let inlineContentInsets = NSDirectionalEdgeInsets(top: 6, leading: 14, bottom: 6, trailing: 12)
+
+    private let clusterContainer = UIView()
     private let artworkView = UIImageView()
     private let titleLabel = UILabel()
     private let subtitleLabel = UILabel()
     private let playPauseButton = UIButton(type: .system)
     private let stack = UIStackView()
+    private let textStack = UIStackView()
     private var isInlineLayout = false
+    private var artworkSizeConstraint: NSLayoutConstraint?
+    private var clusterWidthConstraint: NSLayoutConstraint?
+    private var stackLeadingConstraint: NSLayoutConstraint?
+    private var stackTrailingConstraint: NSLayoutConstraint?
+    private var stackTopConstraint: NSLayoutConstraint?
+    private var stackBottomConstraint: NSLayoutConstraint?
+    private var panGesture: UIPanGestureRecognizer?
+    private var isPlaying = false
+    private var suppressNextTap = false
+    private var targetWidth: CGFloat = 0
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -22,78 +39,213 @@ final class TabsBarAccessoryContentView: UIView {
         configure()
     }
 
+    override var intrinsicContentSize: CGSize {
+        let width = targetWidth > 0 ? targetWidth : UIView.noIntrinsicMetric
+        return CGSize(width: width, height: UIView.noIntrinsicMetric)
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        updateArtworkCornerRadius()
+    }
+
     private func configure() {
         backgroundColor = .clear
+        insetsLayoutMarginsFromSafeArea = false
+        preservesSuperviewLayoutMargins = false
+        setContentHuggingPriority(.required, for: .horizontal)
+        setContentCompressionResistancePriority(.required, for: .horizontal)
+
+        clusterContainer.translatesAutoresizingMaskIntoConstraints = false
+        clusterContainer.backgroundColor = .clear
+        clusterContainer.insetsLayoutMarginsFromSafeArea = false
+        clusterContainer.preservesSuperviewLayoutMargins = false
+        clusterContainer.setContentHuggingPriority(.required, for: .horizontal)
+        clusterContainer.setContentCompressionResistancePriority(.required, for: .horizontal)
 
         artworkView.contentMode = .scaleAspectFill
         artworkView.clipsToBounds = true
-        artworkView.layer.cornerRadius = 6
+        artworkView.layer.masksToBounds = true
         artworkView.backgroundColor = UIColor.secondarySystemFill
 
-        titleLabel.font = .preferredFont(forTextStyle: .subheadline)
+        titleLabel.font = stackedTitleFont()
         titleLabel.textColor = .label
         titleLabel.numberOfLines = 1
         titleLabel.lineBreakMode = .byTruncatingTail
+        titleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         subtitleLabel.font = .preferredFont(forTextStyle: .caption1)
         subtitleLabel.textColor = .secondaryLabel
         subtitleLabel.numberOfLines = 1
         subtitleLabel.lineBreakMode = .byTruncatingTail
+        subtitleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
-        playPauseButton.setImage(UIImage(systemName: "play.fill"), for: .normal)
         playPauseButton.addTarget(self, action: #selector(playPauseTapped), for: .touchUpInside)
         playPauseButton.accessibilityLabel = "Play or pause"
+        playPauseButton.tintColor = .label
+        playPauseButton.setContentHuggingPriority(.required, for: .horizontal)
+        playPauseButton.setContentCompressionResistancePriority(.required, for: .horizontal)
+        playPauseButton.configuration = playButtonConfiguration(inline: false)
 
-        let textStack = UIStackView(arrangedSubviews: [titleLabel, subtitleLabel])
         textStack.axis = .vertical
-        textStack.spacing = 2
+        textStack.spacing = 1
         textStack.alignment = .leading
+        textStack.distribution = .fill
+        textStack.addArrangedSubview(titleLabel)
+        textStack.addArrangedSubview(subtitleLabel)
+        textStack.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        textStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
         stack.axis = .horizontal
         stack.alignment = .center
-        stack.spacing = 12
+        stack.distribution = .fill
+        stack.spacing = 10
         stack.translatesAutoresizingMaskIntoConstraints = false
+        stack.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        stack.isLayoutMarginsRelativeArrangement = false
         stack.addArrangedSubview(artworkView)
         stack.addArrangedSubview(textStack)
         stack.addArrangedSubview(playPauseButton)
+        stack.setCustomSpacing(8, after: textStack)
 
-        addSubview(stack)
+        clusterContainer.preservesSuperviewLayoutMargins = false
+        addSubview(clusterContainer)
+        clusterContainer.addSubview(stack)
+
+        let artworkSize = artworkView.heightAnchor.constraint(equalToConstant: 32)
+        artworkSize.priority = .required
+        artworkSizeConstraint = artworkSize
+
+        let widthConstraint = clusterContainer.widthAnchor.constraint(equalToConstant: 0)
+        widthConstraint.priority = .required
+        clusterWidthConstraint = widthConstraint
+
+        let stackLeading = stack.leadingAnchor.constraint(equalTo: clusterContainer.leadingAnchor, constant: 18)
+        let stackTrailing = stack.trailingAnchor.constraint(equalTo: clusterContainer.trailingAnchor, constant: -16)
+        let stackTop = stack.topAnchor.constraint(equalTo: clusterContainer.topAnchor, constant: 8)
+        let stackBottom = stack.bottomAnchor.constraint(equalTo: clusterContainer.bottomAnchor, constant: -8)
+        stackLeadingConstraint = stackLeading
+        stackTrailingConstraint = stackTrailing
+        stackTopConstraint = stackTop
+        stackBottomConstraint = stackBottom
 
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
-            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
-            stack.topAnchor.constraint(equalTo: topAnchor, constant: 8),
-            stack.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -8),
-            artworkView.widthAnchor.constraint(equalToConstant: 40),
-            artworkView.heightAnchor.constraint(equalToConstant: 40),
-            playPauseButton.widthAnchor.constraint(equalToConstant: 36),
-            playPauseButton.heightAnchor.constraint(equalToConstant: 36),
+            clusterContainer.centerXAnchor.constraint(equalTo: centerXAnchor),
+            clusterContainer.topAnchor.constraint(equalTo: topAnchor),
+            clusterContainer.bottomAnchor.constraint(equalTo: bottomAnchor),
+            clusterContainer.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor),
+            clusterContainer.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor),
+            widthConstraint,
+
+            stackLeading,
+            stackTrailing,
+            stackTop,
+            stackBottom,
+
+            artworkView.widthAnchor.constraint(equalTo: artworkView.heightAnchor),
+            artworkSize,
         ])
 
         let tap = UITapGestureRecognizer(target: self, action: #selector(accessoryTapped))
         addGestureRecognizer(tap)
+
+        let pan = UIPanGestureRecognizer(target: self, action: #selector(handlePan(_:)))
+        pan.delegate = self
+        pan.cancelsTouchesInView = false
+        addGestureRecognizer(pan)
+        panGesture = pan
+
+        applyLayoutMetrics()
+        updatePlayButtonImage()
     }
 
     func update(title: String?, subtitle: String?, isPlaying: Bool, inline: Bool) {
         titleLabel.text = title
         subtitleLabel.text = subtitle
-        let symbol = isPlaying ? "pause.fill" : "play.fill"
-        playPauseButton.setImage(UIImage(systemName: symbol), for: .normal)
+        self.isPlaying = isPlaying
+        updatePlayButtonImage()
         setInlineLayout(inline)
     }
 
     func setArtwork(_ image: UIImage?) {
         artworkView.image = image
+        artworkView.backgroundColor = image == nil ? UIColor.secondarySystemFill : .clear
     }
 
+    /// Sizes the accessory cluster to match the floating tab bar pill width.
+    func setTargetClusterWidth(_ width: CGFloat) {
+        guard width > 0 else { return }
+        let target = width
+        if abs(targetWidth - target) > 0.5 {
+            targetWidth = target
+            clusterWidthConstraint?.constant = target
+            invalidateIntrinsicContentSize()
+            setNeedsLayout()
+        }
+    }
+
+    var hasArtwork: Bool { artworkView.image != nil }
+
     func setInlineLayout(_ inline: Bool) {
-        guard inline != isInlineLayout else { return }
+        let layoutChanged = inline != isInlineLayout
         isInlineLayout = inline
-        artworkView.isHidden = inline
+        artworkView.isHidden = false
         subtitleLabel.isHidden = inline
+        subtitleLabel.numberOfLines = 1
         titleLabel.font = inline
             ? .preferredFont(forTextStyle: .caption1)
-            : .preferredFont(forTextStyle: .subheadline)
+            : stackedTitleFont()
+
+        if layoutChanged {
+            applyLayoutMetrics()
+        }
+    }
+
+    private func stackedTitleFont() -> UIFont {
+        let base = UIFont.preferredFont(forTextStyle: .subheadline)
+        if let descriptor = base.fontDescriptor.withDesign(.default)?
+            .withSymbolicTraits(.traitBold) {
+            return UIFont(descriptor: descriptor, size: base.pointSize)
+        }
+        return base
+    }
+
+    private func applyLayoutMetrics() {
+        let insets = isInlineLayout ? Self.inlineContentInsets : Self.stackedContentInsets
+        stackLeadingConstraint?.constant = insets.leading
+        stackTrailingConstraint?.constant = -insets.trailing
+        stackTopConstraint?.constant = insets.top
+        stackBottomConstraint?.constant = -insets.bottom
+        artworkSizeConstraint?.constant = isInlineLayout ? 28 : 32
+        stack.spacing = isInlineLayout ? 8 : 10
+        playPauseButton.configuration = playButtonConfiguration(inline: isInlineLayout)
+        setNeedsLayout()
+    }
+
+    private func playButtonConfiguration(inline: Bool) -> UIButton.Configuration {
+        var config = UIButton.Configuration.plain()
+        let pad: CGFloat = inline ? 4 : 6
+        config.contentInsets = NSDirectionalEdgeInsets(top: pad, leading: pad, bottom: pad, trailing: pad)
+        return config
+    }
+
+    private func updateArtworkCornerRadius() {
+        let size = min(artworkView.bounds.width, artworkView.bounds.height)
+        guard size > 0 else { return }
+        artworkView.layer.cornerRadius = size * 0.22
+        artworkView.layer.cornerCurve = .continuous
+    }
+
+    private func playSymbolConfiguration() -> UIImage.SymbolConfiguration {
+        UIImage.SymbolConfiguration(pointSize: isInlineLayout ? 14 : 16, weight: .semibold)
+    }
+
+    private func updatePlayButtonImage() {
+        let symbol = isPlaying ? "pause.fill" : "play.fill"
+        playPauseButton.setImage(
+            UIImage(systemName: symbol, withConfiguration: playSymbolConfiguration()),
+            for: .normal
+        )
     }
 
     @objc private func playPauseTapped() {
@@ -101,6 +253,37 @@ final class TabsBarAccessoryContentView: UIView {
     }
 
     @objc private func accessoryTapped() {
+        if suppressNextTap {
+            suppressNextTap = false
+            return
+        }
         onAccessoryTapped?()
+    }
+
+    @objc private func handlePan(_ gesture: UIPanGestureRecognizer) {
+        let translation = gesture.translation(in: self)
+        switch gesture.state {
+        case .changed:
+            if translation.y < -12 {
+                suppressNextTap = true
+            }
+        case .ended, .cancelled:
+            let velocity = gesture.velocity(in: self)
+            let isUpwardSwipe = translation.y < -Self.swipeUpThreshold
+                && abs(translation.x) < Self.swipeMaxHorizontalDrift
+                && velocity.y < 0
+            if isUpwardSwipe {
+                suppressNextTap = true
+                onAccessoryTapped?()
+            }
+        default:
+            break
+        }
+    }
+
+    func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        guard gestureRecognizer === panGesture else { return true }
+        let point = touch.location(in: playPauseButton)
+        return !playPauseButton.bounds.contains(point)
     }
 }

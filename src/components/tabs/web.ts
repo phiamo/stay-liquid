@@ -292,6 +292,6 @@ export class TabsBarWeb extends WebPlugin implements TabsBarPlugin {
   }
 
   async getTabBarMetrics(): Promise<TabBarMetrics> {
-    return { tabBarTopOffset: 0, accessoryHeight: 0 };
+    return { tabBarTopOffset: 0, accessoryHeight: 0, placement: 'bottom', tabBarTopInset: 0 };
   }
 }

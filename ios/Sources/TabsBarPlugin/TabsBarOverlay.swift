@@ -73,6 +73,7 @@ final class TabsBarOverlay: UIViewController, UITabBarControllerDelegate {
     private let accessoryContentView = TabsBarAccessoryContentView()
     private var minimizeBehavior: TabBarMinimizeBehavior = .never
     private var isAccessoryVisible = false
+    private var currentArtworkUrl: String?
 
     var onSelected: ((String) -> Void)?
     var onAccessoryPlayPause: (() -> Void)?
@@ -90,6 +91,11 @@ final class TabsBarOverlay: UIViewController, UITabBarControllerDelegate {
         passthrough.backgroundColor = .clear
         passthroughView = passthrough
         view = passthrough
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        updateAccessoryClusterWidth()
     }
 
     override func viewDidLoad() {
@@ -139,6 +145,18 @@ final class TabsBarOverlay: UIViewController, UITabBarControllerDelegate {
             tabBar.standardAppearance = appearance
             tabBar.scrollEdgeAppearance = appearance
         }
+        forceBottomFloatingTabBar()
+    }
+
+    /// Keep the iPhone-style floating bottom pill on iPad.
+    /// iPadOS 18/26 regular width puts UITabBarController tabs at the top;
+    /// UITabAccessory makes that relocation worse.
+    private func forceBottomFloatingTabBar() {
+        guard #available(iOS 18.0, *) else { return }
+        glassTabBarController.mode = .tabBar
+        guard UIDevice.current.userInterfaceIdiom == .pad else { return }
+        traitOverrides.horizontalSizeClass = .compact
+        glassTabBarController.traitOverrides.horizontalSizeClass = .compact
     }
 
     private func applyMinimizeBehavior(_ behavior: TabBarMinimizeBehavior) {
@@ -225,7 +243,7 @@ final class TabsBarOverlay: UIViewController, UITabBarControllerDelegate {
         applyBadge(value, to: item)
     }
 
-    /// Measured top of chrome from the overlay view bottom (accessory if present, else tab pill).
+    /// Measured top of bottom chrome from the overlay view bottom (for JS list insets).
     func tabBarTopOffset() -> CGFloat {
         view.layoutIfNeeded()
         tabBar.layoutIfNeeded()
@@ -238,7 +256,27 @@ final class TabsBarOverlay: UIViewController, UITabBarControllerDelegate {
             }
         }
 
+        if isTabBarAtTop() {
+            return 0
+        }
+
         return view.bounds.height - tabBar.frame.minY
+    }
+
+    func isTabBarAtTop() -> Bool {
+        tabBar.layoutIfNeeded()
+        return tabBar.frame.minY < view.bounds.midY
+    }
+
+    /// Extra inset so web headers sit below a top-placed iPad tab bar.
+    func tabBarTopInset() -> CGFloat {
+        guard isTabBarAtTop() else { return 0 }
+        let gap: CGFloat = 8
+        return max(0, tabBar.frame.maxY - view.safeAreaInsets.top + gap)
+    }
+
+    func tabBarPlacement() -> String {
+        isTabBarAtTop() ? "top" : "bottom"
     }
 
     /// Height of the bottom accessory content when visible (0 otherwise).
@@ -248,27 +286,150 @@ final class TabsBarOverlay: UIViewController, UITabBarControllerDelegate {
         return accessoryContentView.bounds.height
     }
 
+    /// Visual width of the floating tab bar pill (not the full-width UITabBar container).
+    private func floatingTabBarPillWidth() -> CGFloat {
+        tabBar.layoutIfNeeded()
+        let barWidth = tabBar.bounds.width
+        guard barWidth > 0 else { return 0 }
+
+        var bestPlatterWidth: CGFloat = 0
+        collectPlatterWidth(in: tabBar, barWidth: barWidth, best: &bestPlatterWidth)
+        if bestPlatterWidth > 0 {
+            return min(bestPlatterWidth, barWidth)
+        }
+
+        var controlUnion = CGRect.null
+        collectControlFrames(in: tabBar, union: &controlUnion)
+        if !controlUnion.isNull, controlUnion.width > 0 {
+            let pillWidth = controlUnion.width + 20
+            return min(max(pillWidth, 0), barWidth)
+        }
+
+        return barWidth
+    }
+
+    private func collectPlatterWidth(in view: UIView, barWidth: CGFloat, best: inout CGFloat) {
+        let name = String(describing: type(of: view))
+        let isPlatter = name.localizedCaseInsensitiveContains("platter")
+            || name.localizedCaseInsensitiveContains("background")
+            || name.localizedCaseInsensitiveContains("island")
+        if isPlatter {
+            let width = view.bounds.width
+            if width > 80, width < barWidth * 0.92 {
+                best = max(best, width)
+            }
+        }
+        for subview in view.subviews {
+            collectPlatterWidth(in: subview, barWidth: barWidth, best: &best)
+        }
+    }
+
+    private func collectControlFrames(in view: UIView, union: inout CGRect) {
+        for subview in view.subviews {
+            if let control = subview as? UIControl, !control.isHidden, control.alpha > 0.01 {
+                let frame = tabBar.convert(control.bounds, from: control)
+                union = union.union(frame)
+            }
+            collectControlFrames(in: subview, union: &union)
+        }
+    }
+
+    private func updateAccessoryClusterWidth() {
+        guard isAccessoryVisible else { return }
+        tabBar.layoutIfNeeded()
+        accessoryContentView.layoutIfNeeded()
+        let pillWidth = floatingTabBarPillWidth()
+        guard pillWidth > 0 else { return }
+        accessoryContentView.setTargetClusterWidth(pillWidth)
+        pinAccessoryChrome(to: pillWidth)
+    }
+
+    /// UITabAccessory stretches its host to the tab bar container. Shrink the glass chrome
+    /// to the pill width without converting the host to Auto Layout (that drops its Y position).
+    private func pinAccessoryChrome(to pillWidth: CGFloat) {
+        var chrome: UIView = accessoryContentView
+        var node: UIView? = accessoryContentView.superview
+        while let current = node,
+              current !== view,
+              current !== glassTabBarController.view,
+              current !== tabBar {
+            let height = current.bounds.height
+            let isChromeHeight = height > 0 && height <= max(accessoryContentView.bounds.height + 48, 96)
+            if isChromeHeight, current.bounds.width > pillWidth + 8 {
+                chrome = current
+            }
+            node = current.superview
+        }
+
+        guard let parent = chrome.superview, pillWidth > 0 else { return }
+        let midX = parent.bounds.midX
+        guard abs(chrome.bounds.width - pillWidth) > 1 || abs(chrome.center.x - midX) > 1 else { return }
+        chrome.bounds.size.width = pillWidth
+        chrome.center = CGPoint(x: midX, y: chrome.center.y)
+    }
+
     /// Sets or clears the iOS 26 bottom accessory (mini-player slot).
     func setBottomAccessory(
         visible: Bool,
         title: String?,
         subtitle: String?,
         isPlaying: Bool,
-        animated: Bool
+        animated: Bool,
+        artworkUrl: String? = nil
     ) {
         guard #available(iOS 26.0, *) else { return }
         if visible {
             isAccessoryVisible = true
             accessoryContentView.update(title: title, subtitle: subtitle, isPlaying: isPlaying, inline: isAccessoryInline())
+            loadArtwork(artworkUrl)
             let accessory = UITabAccessory(contentView: accessoryContentView)
             glassTabBarController.setBottomAccessory(accessory, animated: animated)
             passthroughView?.accessoryContentView = accessoryContentView
             updateAccessoryEnvironment()
+            updateAccessoryClusterWidth()
         } else {
             isAccessoryVisible = false
+            currentArtworkUrl = nil
+            accessoryContentView.setArtwork(nil)
             glassTabBarController.setBottomAccessory(nil, animated: animated)
             passthroughView?.accessoryContentView = nil
         }
+    }
+
+    private func loadArtwork(_ urlString: String?) {
+        guard let urlString, !urlString.isEmpty else {
+            currentArtworkUrl = nil
+            accessoryContentView.setArtwork(nil)
+            return
+        }
+        if urlString == currentArtworkUrl, accessoryContentView.hasArtwork {
+            return
+        }
+        currentArtworkUrl = urlString
+
+        if urlString.hasPrefix("data:image"),
+           let comma = urlString.firstIndex(of: ","),
+           let data = Data(base64Encoded: String(urlString[urlString.index(after: comma)...])),
+           let image = UIImage(data: data) {
+            accessoryContentView.setArtwork(image)
+            return
+        }
+
+        if urlString.hasPrefix("file://"), let url = URL(string: urlString) {
+            accessoryContentView.setArtwork(UIImage(contentsOfFile: url.path))
+            return
+        }
+
+        guard let url = URL(string: urlString) else { return }
+        URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
+            guard let self,
+                  let data,
+                  let image = UIImage(data: data),
+                  self.currentArtworkUrl == urlString else { return }
+            DispatchQueue.main.async {
+                self.accessoryContentView.setArtwork(image)
+            }
+        }.resume()
     }
 
     func clearBottomAccessory(animated: Bool) {
@@ -289,6 +450,7 @@ final class TabsBarOverlay: UIViewController, UITabBarControllerDelegate {
     private func updateAccessoryEnvironment() {
         let environment = currentAccessoryEnvironment()
         accessoryContentView.setInlineLayout(environment == "inline")
+        updateAccessoryClusterWidth()
         onAccessoryEnvironmentChanged?(environment)
     }
 
