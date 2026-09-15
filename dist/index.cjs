@@ -1,3 +1,4 @@
+"use strict";
 var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
@@ -41,6 +42,7 @@ function isValidColor(color) {
 }
 var init_color_utils = __esm({
   "src/components/tabs/color-utils.ts"() {
+    "use strict";
   }
 });
 
@@ -52,11 +54,10 @@ __export(web_exports, {
 var import_core, ImageValidator, ImageManager, TabsBarWeb;
 var init_web = __esm({
   "src/components/tabs/web.ts"() {
+    "use strict";
     import_core = require("@capacitor/core");
     init_color_utils();
     ImageValidator = class {
-      static SUPPORTED_FORMATS = ["image/png", "image/jpeg", "image/jpg", "image/svg+xml", "image/webp"];
-      static MAX_FILE_SIZE = 5 * 1024 * 1024;
       // 5MB
       static isValidImageFormat(contentType) {
         return this.SUPPORTED_FORMATS.includes(contentType.toLowerCase());
@@ -77,11 +78,9 @@ var init_web = __esm({
         return blob.size <= this.MAX_FILE_SIZE;
       }
     };
+    ImageValidator.SUPPORTED_FORMATS = ["image/png", "image/jpeg", "image/jpg", "image/svg+xml", "image/webp"];
+    ImageValidator.MAX_FILE_SIZE = 5 * 1024 * 1024;
     ImageManager = class {
-      static cache = /* @__PURE__ */ new Map();
-      static CACHE_DURATION = 24 * 60 * 60 * 1e3;
-      // 24 hours
-      static loadingPromises = /* @__PURE__ */ new Map();
       static async loadImage(imageIcon) {
         const { image } = imageIcon;
         if (ImageValidator.isValidBase64DataUri(image)) {
@@ -167,9 +166,16 @@ var init_web = __esm({
         this.loadingPromises.clear();
       }
     };
+    ImageManager.cache = /* @__PURE__ */ new Map();
+    ImageManager.CACHE_DURATION = 24 * 60 * 60 * 1e3;
+    // 24 hours
+    ImageManager.loadingPromises = /* @__PURE__ */ new Map();
     TabsBarWeb = class extends import_core.WebPlugin {
-      loadingStates = /* @__PURE__ */ new Map();
-      imageLoadPromises = /* @__PURE__ */ new Map();
+      constructor() {
+        super(...arguments);
+        this.loadingStates = /* @__PURE__ */ new Map();
+        this.imageLoadPromises = /* @__PURE__ */ new Map();
+      }
       async configure(options) {
         if (options.selectedIconColor && !isValidColor(options.selectedIconColor)) {
           console.warn(`TabsBar: Invalid selectedIconColor format: ${options.selectedIconColor}`);
@@ -257,7 +263,7 @@ var init_web = __esm({
         return { environment: "unknown" };
       }
       async getTabBarMetrics() {
-        return { tabBarTopOffset: 0, accessoryHeight: 0 };
+        return { tabBarTopOffset: 0, accessoryHeight: 0, placement: "bottom", tabBarTopInset: 0 };
       }
     };
   }
@@ -279,3 +285,4 @@ var TabsBar = (0, import_core2.registerPlugin)("TabsBar", {
 0 && (module.exports = {
   TabsBar
 });
+//# sourceMappingURL=index.cjs.map
