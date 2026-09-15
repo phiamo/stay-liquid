@@ -1,0 +1,7 @@
+# Xcode per-user state (schemes, breakpoints)
+.swiftpm/
+*.xcuserdatad/
+.DS_Store
+
+# Platform-specific optional dep with a compiled binary; installs only on macOS
+node_modules/fsevents/
