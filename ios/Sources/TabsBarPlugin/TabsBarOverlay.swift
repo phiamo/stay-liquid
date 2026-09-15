@@ -570,7 +570,7 @@ final class TabsBarOverlay: UIViewController, UITabBarControllerDelegate {
         private static let supportedFormats: Set<String> = ["png", "jpg", "jpeg", "svg", "webp"]
         
         /// Maximum file size (5MB)
-        private static let maxFileSize: Int = 5 * 1024 * 1024
+        private nonisolated static let maxFileSize: Int = 5 * 1024 * 1024
         
         /// Image cache with URL as key
         private static var imageCache: [String: UIImage] = [:]
@@ -634,8 +634,14 @@ final class TabsBarOverlay: UIViewController, UITabBarControllerDelegate {
             loadingStates[urlString] = true
             
             let task = URLSession.shared.dataTask(with: url) { data, response, error in
+                // imageCache/loadingStates are main-actor isolated; this closure is not,
+                // so every access hops to main, where assumeIsolated is safe.
                 defer {
-                    loadingStates[urlString] = false
+                    DispatchQueue.main.async {
+                        MainActor.assumeIsolated {
+                            loadingStates[urlString] = false
+                        }
+                    }
                 }
                 
                 guard let data = data,
@@ -679,7 +685,11 @@ final class TabsBarOverlay: UIViewController, UITabBarControllerDelegate {
                 }
                 
                 // Cache the image
-                imageCache[urlString] = image
+                DispatchQueue.main.async {
+                    MainActor.assumeIsolated {
+                        imageCache[urlString] = image
+                    }
+                }
                 
                 DispatchQueue.main.async {
                     completion(image)
