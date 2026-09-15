@@ -68,7 +68,7 @@ final class TabsBarOverlay: UIViewController, UITabBarControllerDelegate {
 
     private(set) var items: [TabsBarItem] = []
     private var idToIndex: [String: Int] = [:]
-    private let tabBarController = UITabBarController()
+    private let glassTabBarController = UITabBarController()
     private var passthroughView: TabsBarPassthroughView?
     private let accessoryContentView = TabsBarAccessoryContentView()
     private var minimizeBehavior: TabBarMinimizeBehavior = .never
@@ -82,7 +82,7 @@ final class TabsBarOverlay: UIViewController, UITabBarControllerDelegate {
     private var selectedIconColor: UIColor?
     private var unselectedIconColor: UIColor?
 
-    private var tabBar: UITabBar { tabBarController.tabBar }
+    private var tabBar: UITabBar { glassTabBarController.tabBar }
 
     override func loadView() {
         let passthrough = TabsBarPassthroughView()
@@ -95,21 +95,21 @@ final class TabsBarOverlay: UIViewController, UITabBarControllerDelegate {
         super.viewDidLoad()
         view.backgroundColor = .clear
 
-        tabBarController.delegate = self
+        glassTabBarController.delegate = self
         configureGlassTabBar()
 
-        addChild(tabBarController)
-        view.addSubview(tabBarController.view)
-        tabBarController.view.translatesAutoresizingMaskIntoConstraints = false
-        tabBarController.didMove(toParent: self)
-        tabBarController.view.backgroundColor = .clear
-        tabBarController.view.isOpaque = false
+        addChild(glassTabBarController)
+        view.addSubview(glassTabBarController.view)
+        glassTabBarController.view.translatesAutoresizingMaskIntoConstraints = false
+        glassTabBarController.didMove(toParent: self)
+        glassTabBarController.view.backgroundColor = .clear
+        glassTabBarController.view.isOpaque = false
 
         NSLayoutConstraint.activate([
-            tabBarController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            tabBarController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            tabBarController.view.topAnchor.constraint(equalTo: view.topAnchor),
-            tabBarController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            glassTabBarController.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            glassTabBarController.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            glassTabBarController.view.topAnchor.constraint(equalTo: view.topAnchor),
+            glassTabBarController.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
         ])
 
         passthroughView?.tabBar = tabBar
@@ -145,13 +145,13 @@ final class TabsBarOverlay: UIViewController, UITabBarControllerDelegate {
         guard #available(iOS 26.0, *) else { return }
         switch behavior {
         case .never:
-            tabBarController.tabBarMinimizeBehavior = .never
+            glassTabBarController.tabBarMinimizeBehavior = .never
         case .onScrollDown:
-            tabBarController.tabBarMinimizeBehavior = .onScrollDown
+            glassTabBarController.tabBarMinimizeBehavior = .onScrollDown
         case .onScrollUp:
-            tabBarController.tabBarMinimizeBehavior = .onScrollUp
+            glassTabBarController.tabBarMinimizeBehavior = .onScrollUp
         case .automatic:
-            tabBarController.tabBarMinimizeBehavior = .automatic
+            glassTabBarController.tabBarMinimizeBehavior = .automatic
         }
     }
 
@@ -175,14 +175,14 @@ final class TabsBarOverlay: UIViewController, UITabBarControllerDelegate {
         let viewControllers: [UIViewController] = items.enumerated().map { idx, model in
             createViewController(for: model, at: idx)
         }
-        tabBarController.setViewControllers(viewControllers, animated: false)
+        glassTabBarController.setViewControllers(viewControllers, animated: false)
 
         applyColorConfiguration()
 
         if let initialId, let idx = idToIndex[initialId] {
-            tabBarController.selectedIndex = idx
+            glassTabBarController.selectedIndex = idx
         } else {
-            tabBarController.selectedIndex = 0
+            glassTabBarController.selectedIndex = 0
         }
 
         view.isHidden = !visible
@@ -209,16 +209,16 @@ final class TabsBarOverlay: UIViewController, UITabBarControllerDelegate {
     /// Selects a tab by its ID
     func select(id: String) {
         guard let idx = idToIndex[id],
-              let viewControllers = tabBarController.viewControllers,
+              let viewControllers = glassTabBarController.viewControllers,
               idx < viewControllers.count else { return }
-        tabBarController.selectedIndex = idx
+        glassTabBarController.selectedIndex = idx
         applyColorConfiguration()
     }
 
     /// Sets a badge value for a specific tab
     func setBadge(id: String, value: TabsBarBadge?) {
         guard let idx = idToIndex[id],
-              let viewControllers = tabBarController.viewControllers,
+              let viewControllers = glassTabBarController.viewControllers,
               idx < viewControllers.count,
               let item = viewControllers[idx].tabBarItem else { return }
         applyBadge(value, to: item)
@@ -242,11 +242,11 @@ final class TabsBarOverlay: UIViewController, UITabBarControllerDelegate {
         if visible {
             accessoryContentView.update(title: title, subtitle: subtitle, isPlaying: isPlaying, inline: isAccessoryInline())
             let accessory = UITabAccessory(contentView: accessoryContentView)
-            tabBarController.setBottomAccessory(accessory, animated: animated)
+            glassTabBarController.setBottomAccessory(accessory, animated: animated)
             passthroughView?.accessoryContentView = accessoryContentView
             updateAccessoryEnvironment()
         } else {
-            tabBarController.setBottomAccessory(nil, animated: animated)
+            glassTabBarController.setBottomAccessory(nil, animated: animated)
             passthroughView?.accessoryContentView = nil
         }
     }
