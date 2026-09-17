@@ -74,6 +74,7 @@ final class TabsBarOverlay: UIViewController, UITabBarControllerDelegate {
     private var minimizeBehavior: TabBarMinimizeBehavior = .never
     private var isAccessoryVisible = false
     private var currentArtworkUrl: String?
+    private var lastPinnedPillWidth: CGFloat = 0
 
     var onSelected: ((String) -> Void)?
     var onAccessoryPlayPause: (() -> Void)?
@@ -96,6 +97,7 @@ final class TabsBarOverlay: UIViewController, UITabBarControllerDelegate {
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         updateAccessoryClusterWidth()
+        scheduleAccessoryChromeReflow()
     }
 
     override func viewDidLoad() {
@@ -292,35 +294,53 @@ final class TabsBarOverlay: UIViewController, UITabBarControllerDelegate {
         let barWidth = tabBar.bounds.width
         guard barWidth > 0 else { return 0 }
 
-        var bestPlatterWidth: CGFloat = 0
-        collectPlatterWidth(in: tabBar, barWidth: barWidth, best: &bestPlatterWidth)
-        if bestPlatterWidth > 0 {
-            return min(bestPlatterWidth, barWidth)
-        }
-
         var controlUnion = CGRect.null
         collectControlFrames(in: tabBar, union: &controlUnion)
-        if !controlUnion.isNull, controlUnion.width > 0 {
-            let pillWidth = controlUnion.width + 20
-            return min(max(pillWidth, 0), barWidth)
+        let controlBasedWidth: CGFloat = {
+            guard !controlUnion.isNull, controlUnion.width > 0 else { return 0 }
+            return min(max(controlUnion.width + 20, 0), barWidth)
+        }()
+
+        let platterWidth = narrowestPlatterWidth(in: tabBar, barWidth: barWidth)
+
+        if controlBasedWidth > 0 {
+            if let platterWidth, abs(platterWidth - controlBasedWidth) <= 24 {
+                return min(platterWidth, barWidth)
+            }
+            return controlBasedWidth
+        }
+
+        if let platterWidth {
+            return min(platterWidth, barWidth)
         }
 
         return barWidth
     }
 
-    private func collectPlatterWidth(in view: UIView, barWidth: CGFloat, best: inout CGFloat) {
+    private func narrowestPlatterWidth(in view: UIView, barWidth: CGFloat) -> CGFloat? {
+        var narrowest: CGFloat?
+        collectNarrowestPlatterWidth(in: view, barWidth: barWidth, narrowest: &narrowest)
+        return narrowest
+    }
+
+    private func collectNarrowestPlatterWidth(in view: UIView, barWidth: CGFloat, narrowest: inout CGFloat?) {
         let name = String(describing: type(of: view))
         let isPlatter = name.localizedCaseInsensitiveContains("platter")
             || name.localizedCaseInsensitiveContains("background")
             || name.localizedCaseInsensitiveContains("island")
         if isPlatter {
             let width = view.bounds.width
-            if width > 80, width < barWidth * 0.92 {
-                best = max(best, width)
+            let height = view.bounds.height
+            if width >= 180, width <= barWidth * 0.55, height >= 30, height <= 80 {
+                if let current = narrowest {
+                    narrowest = min(current, width)
+                } else {
+                    narrowest = width
+                }
             }
         }
         for subview in view.subviews {
-            collectPlatterWidth(in: subview, barWidth: barWidth, best: &best)
+            collectNarrowestPlatterWidth(in: subview, barWidth: barWidth, narrowest: &narrowest)
         }
     }
 
@@ -340,6 +360,26 @@ final class TabsBarOverlay: UIViewController, UITabBarControllerDelegate {
         accessoryContentView.layoutIfNeeded()
         let pillWidth = floatingTabBarPillWidth()
         guard pillWidth > 0 else { return }
+        lastPinnedPillWidth = pillWidth
+        accessoryContentView.setTargetClusterWidth(pillWidth)
+        pinAccessoryChrome(to: pillWidth)
+    }
+
+    private func scheduleAccessoryChromeReflow() {
+        guard isAccessoryVisible, lastPinnedPillWidth > 0 else { return }
+        DispatchQueue.main.async { [weak self] in
+            self?.reflowAccessoryChrome()
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            self?.reflowAccessoryChrome()
+        }
+    }
+
+    private func reflowAccessoryChrome() {
+        guard isAccessoryVisible else { return }
+        let pillWidth = floatingTabBarPillWidth()
+        guard pillWidth > 0 else { return }
+        lastPinnedPillWidth = pillWidth
         accessoryContentView.setTargetClusterWidth(pillWidth)
         pinAccessoryChrome(to: pillWidth)
     }
@@ -347,21 +387,72 @@ final class TabsBarOverlay: UIViewController, UITabBarControllerDelegate {
     /// UITabAccessory stretches its host to the tab bar container. Shrink the glass chrome
     /// to the pill width without converting the host to Auto Layout (that drops its Y position).
     private func pinAccessoryChrome(to pillWidth: CGFloat) {
-        var chrome: UIView = accessoryContentView
-        var node: UIView? = accessoryContentView.superview
-        while let current = node,
-              current !== view,
-              current !== glassTabBarController.view,
-              current !== tabBar {
-            let height = current.bounds.height
-            let isChromeHeight = height > 0 && height <= max(accessoryContentView.bounds.height + 48, 96)
-            if isChromeHeight, current.bounds.width > pillWidth + 8 {
-                chrome = current
+        guard pillWidth > 0 else { return }
+
+        var chromeViews: [UIView] = []
+        if let host = accessoryContentView.superview,
+           host !== tabBar,
+           !tabBar.isDescendant(of: host),
+           host.bounds.width > pillWidth + 8 {
+            chromeViews.append(host)
+        }
+
+        var node: UIView? = accessoryContentView.superview?.superview
+        while let current = node {
+            if current === tabBar || current === glassTabBarController.view || current === view {
+                break
+            }
+            if canResizeAccessoryChrome(current, pillWidth: pillWidth) {
+                chromeViews.append(current)
             }
             node = current.superview
         }
 
+        collectAccessoryOnlyChromeHosts(in: glassTabBarController.view, pillWidth: pillWidth, into: &chromeViews)
+
+        for chrome in chromeViews {
+            resizeChromeToPill(chrome, pillWidth: pillWidth)
+        }
+    }
+
+    private func canResizeAccessoryChrome(_ view: UIView, pillWidth: CGFloat) -> Bool {
+        view !== accessoryContentView
+            && view.bounds.width > pillWidth + 8
+            && containsAccessoryContentView(view)
+            && !tabBar.isDescendant(of: view)
+    }
+
+    private func collectAccessoryOnlyChromeHosts(in view: UIView, pillWidth: CGFloat, into hosts: inout [UIView]) {
+        if canResizeAccessoryChrome(view, pillWidth: pillWidth),
+           isAccessoryRelatedName(view),
+           !hosts.contains(where: { $0 === view }) {
+            hosts.append(view)
+        }
+
+        for subview in view.subviews {
+            collectAccessoryOnlyChromeHosts(in: subview, pillWidth: pillWidth, into: &hosts)
+        }
+    }
+
+    private func isAccessoryRelatedName(_ view: UIView) -> Bool {
+        let name = String(describing: type(of: view))
+        return name.localizedCaseInsensitiveContains("accessory")
+            || name.localizedCaseInsensitiveContains("glass")
+            || name.localizedCaseInsensitiveContains("platter")
+            || name.localizedCaseInsensitiveContains("capsule")
+    }
+
+    private func containsAccessoryContentView(_ view: UIView) -> Bool {
+        if view === accessoryContentView { return true }
+        for subview in view.subviews {
+            if containsAccessoryContentView(subview) { return true }
+        }
+        return false
+    }
+
+    private func resizeChromeToPill(_ chrome: UIView, pillWidth: CGFloat) {
         guard let parent = chrome.superview, pillWidth > 0 else { return }
+        guard !tabBar.isDescendant(of: chrome) else { return }
         let midX = parent.bounds.midX
         guard abs(chrome.bounds.width - pillWidth) > 1 || abs(chrome.center.x - midX) > 1 else { return }
         chrome.bounds.size.width = pillWidth
@@ -387,6 +478,7 @@ final class TabsBarOverlay: UIViewController, UITabBarControllerDelegate {
             passthroughView?.accessoryContentView = accessoryContentView
             updateAccessoryEnvironment()
             updateAccessoryClusterWidth()
+            scheduleAccessoryChromeReflow()
         } else {
             isAccessoryVisible = false
             currentArtworkUrl = nil

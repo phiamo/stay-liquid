@@ -46,7 +46,18 @@ final class TabsBarAccessoryContentView: UIView, UIGestureRecognizerDelegate {
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        applyPillWidthToHost()
         updateArtworkCornerRadius()
+    }
+
+    /// UITabAccessory stretches its content view to the tab bar container width on iPad.
+    /// Shrink the hosted view to the measured pill width so system glass hugs the cluster.
+    private func applyPillWidthToHost() {
+        guard targetWidth > 0, let parent = superview else { return }
+        let midX = parent.bounds.midX
+        guard abs(bounds.width - targetWidth) > 1 || abs(center.x - midX) > 1 else { return }
+        bounds.size.width = targetWidth
+        center = CGPoint(x: midX, y: center.y)
     }
 
     private func configure() {
@@ -181,6 +192,8 @@ final class TabsBarAccessoryContentView: UIView, UIGestureRecognizerDelegate {
             clusterWidthConstraint?.constant = target
             invalidateIntrinsicContentSize()
             setNeedsLayout()
+            layoutIfNeeded()
+            applyPillWidthToHost()
         }
     }
 
