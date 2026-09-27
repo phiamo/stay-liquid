@@ -7,7 +7,7 @@ Pod::Spec.new do |s|
   s.author           = { 'Hapcha' => 'team@hapcha.com' }
   s.source           = { :path => '.' }
   s.source_files     = 'ios/Sources/**/*.{swift,m,h}'
-  s.ios.deployment_target = '18.0'
+  s.ios.deployment_target = '15.0'
   s.swift_version    = '5.9'
   s.dependency       'Capacitor', '>= 6.0.0'
 end
