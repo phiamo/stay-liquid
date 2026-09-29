@@ -9,6 +9,7 @@ import type {
   ImageIcon,
   ImageLoadingState,
   BottomAccessoryOptions,
+  BottomAccessoryProgressOptions,
   TabAccessoryEnvironment,
   TabBarMetrics
 } from "./definitions";
@@ -180,6 +181,9 @@ export class TabsBarWeb extends WebPlugin implements TabsBarPlugin {
     if (options.unselectedIconColor && !isValidColor(options.unselectedIconColor)) {
       console.warn(`TabsBar: Invalid unselectedIconColor format: ${options.unselectedIconColor}`);
     }
+    if (options.progressColor && !isValidColor(options.progressColor)) {
+      console.warn(`TabsBar: Invalid progressColor format: ${options.progressColor}`);
+    }
     
     // Validate and preload images
     await this.validateAndPreloadImages(options.items);
@@ -190,7 +194,8 @@ export class TabsBarWeb extends WebPlugin implements TabsBarPlugin {
       initialId: options.initialId,
       visible: options.visible,
       hasSelectedColor: !!options.selectedIconColor,
-      hasUnselectedColor: !!options.unselectedIconColor
+      hasUnselectedColor: !!options.unselectedIconColor,
+      hasProgressColor: !!options.progressColor
     });
   }
   
@@ -281,6 +286,10 @@ export class TabsBarWeb extends WebPlugin implements TabsBarPlugin {
 
   async setBottomAccessory(options: BottomAccessoryOptions): Promise<void> {
     console.log('TabsBar: setBottomAccessory()', options);
+  }
+
+  async setBottomAccessoryProgress(options: BottomAccessoryProgressOptions): Promise<void> {
+    console.log('TabsBar: setBottomAccessoryProgress()', options);
   }
 
   async clearBottomAccessory(): Promise<void> {

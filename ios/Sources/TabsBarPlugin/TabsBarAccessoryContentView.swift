@@ -9,6 +9,7 @@ final class TabsBarAccessoryContentView: UIView, UIGestureRecognizerDelegate {
     private static let swipeMaxHorizontalDrift: CGFloat = 48
     private static let stackedContentInsets = NSDirectionalEdgeInsets(top: 8, leading: 18, bottom: 8, trailing: 16)
     private static let inlineContentInsets = NSDirectionalEdgeInsets(top: 6, leading: 14, bottom: 6, trailing: 12)
+    private static let progressHeight: CGFloat = 2.5
 
     private let clusterContainer = UIView()
     private let artworkView = UIImageView()
@@ -17,6 +18,10 @@ final class TabsBarAccessoryContentView: UIView, UIGestureRecognizerDelegate {
     private let playPauseButton = UIButton(type: .system)
     private let stack = UIStackView()
     private let textStack = UIStackView()
+    private let progressTrack = UIView()
+    private let progressFill = UIView()
+    private var currentProgress: CGFloat = 0
+    private var progressColor: UIColor?
     private var isInlineLayout = false
     private var artworkSizeConstraint: NSLayoutConstraint?
     private var clusterWidthConstraint: NSLayoutConstraint?
@@ -48,6 +53,7 @@ final class TabsBarAccessoryContentView: UIView, UIGestureRecognizerDelegate {
         super.layoutSubviews()
         applyPillWidthToHost()
         updateArtworkCornerRadius()
+        updateProgressFillFrame()
     }
 
     /// UITabAccessory stretches its content view to the tab bar container width on iPad.
@@ -123,6 +129,15 @@ final class TabsBarAccessoryContentView: UIView, UIGestureRecognizerDelegate {
         addSubview(clusterContainer)
         clusterContainer.addSubview(stack)
 
+        progressTrack.isUserInteractionEnabled = false
+        progressTrack.isHidden = true
+        progressTrack.clipsToBounds = true
+        progressTrack.translatesAutoresizingMaskIntoConstraints = false
+        progressFill.isUserInteractionEnabled = false
+        applyProgressColors()
+        progressTrack.addSubview(progressFill)
+        clusterContainer.addSubview(progressTrack)
+
         let artworkSize = artworkView.heightAnchor.constraint(equalToConstant: 32)
         artworkSize.priority = .required
         artworkSizeConstraint = artworkSize
@@ -155,6 +170,11 @@ final class TabsBarAccessoryContentView: UIView, UIGestureRecognizerDelegate {
 
             artworkView.widthAnchor.constraint(equalTo: artworkView.heightAnchor),
             artworkSize,
+
+            progressTrack.leadingAnchor.constraint(equalTo: clusterContainer.leadingAnchor),
+            progressTrack.trailingAnchor.constraint(equalTo: clusterContainer.trailingAnchor),
+            progressTrack.bottomAnchor.constraint(equalTo: clusterContainer.bottomAnchor),
+            progressTrack.heightAnchor.constraint(equalToConstant: Self.progressHeight),
         ])
 
         let tap = UITapGestureRecognizer(target: self, action: #selector(accessoryTapped))
@@ -181,6 +201,21 @@ final class TabsBarAccessoryContentView: UIView, UIGestureRecognizerDelegate {
     func setArtwork(_ image: UIImage?) {
         artworkView.image = image
         artworkView.backgroundColor = image == nil ? UIColor.secondarySystemFill : .clear
+    }
+
+    /// Updates the hairline playback bar. Values outside 0...1 hide the track.
+    func setProgress(_ progress: CGFloat) {
+        let hide = !progress.isFinite || progress < 0
+        progressTrack.isHidden = hide
+        guard !hide else { return }
+        currentProgress = min(max(progress, 0), 1)
+        updateProgressFillFrame()
+    }
+
+    /// Fill color for the progress hairline. Track uses a translucent version of the same color.
+    func setProgressColor(_ color: UIColor?) {
+        progressColor = color
+        applyProgressColors()
     }
 
     /// Sizes the accessory cluster to match the floating tab bar pill width.
@@ -247,6 +282,27 @@ final class TabsBarAccessoryContentView: UIView, UIGestureRecognizerDelegate {
         guard size > 0 else { return }
         artworkView.layer.cornerRadius = size * 0.22
         artworkView.layer.cornerCurve = .continuous
+    }
+
+    private func applyProgressColors() {
+        if let progressColor {
+            progressFill.backgroundColor = progressColor
+            progressTrack.backgroundColor = progressColor.withAlphaComponent(0.22)
+        } else {
+            progressFill.backgroundColor = UIColor.label.withAlphaComponent(0.9)
+            progressTrack.backgroundColor = UIColor.label.withAlphaComponent(0.18)
+        }
+    }
+
+    private func updateProgressFillFrame() {
+        let bounds = progressTrack.bounds
+        guard bounds.width > 0 else { return }
+        progressFill.frame = CGRect(
+            x: 0,
+            y: 0,
+            width: bounds.width * currentProgress,
+            height: bounds.height
+        )
     }
 
     private func playSymbolConfiguration() -> UIImage.SymbolConfiguration {

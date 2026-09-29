@@ -463,6 +463,7 @@ public class TabsBarPlugin: CAPPlugin, CAPBridgedPlugin {
         CAPPluginMethod(name: "setBadge", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getSafeAreaInsets", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "setBottomAccessory", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "setBottomAccessoryProgress", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "clearBottomAccessory", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getTabAccessoryEnvironment", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "getTabBarMetrics", returnType: CAPPluginReturnPromise),
@@ -525,6 +526,7 @@ public class TabsBarPlugin: CAPPlugin, CAPBridgedPlugin {
         // Parse color options
         let selectedIconColor = ColorUtils.parseColor(call.getString("selectedIconColor"))
         let unselectedIconColor = ColorUtils.parseColor(call.getString("unselectedIconColor"))
+        let progressColor = ColorUtils.parseColor(call.getString("progressColor"))
         
         // Log warnings for invalid colors but continue with defaults
         if call.getString("selectedIconColor") != nil && selectedIconColor == nil {
@@ -532,6 +534,9 @@ public class TabsBarPlugin: CAPPlugin, CAPBridgedPlugin {
         }
         if call.getString("unselectedIconColor") != nil && unselectedIconColor == nil {
             print("TabsBar Warning: Invalid unselectedIconColor format, using default")
+        }
+        if call.getString("progressColor") != nil && progressColor == nil {
+            print("TabsBar Warning: Invalid progressColor format, using default")
         }
 
         let items: [TabsBarItem] = jsItems.map { js in
@@ -578,6 +583,7 @@ public class TabsBarPlugin: CAPPlugin, CAPBridgedPlugin {
                 visible: visible,
                 selectedIconColor: selectedIconColor,
                 unselectedIconColor: unselectedIconColor,
+                progressColor: progressColor,
                 tabBarMinimizeBehavior: minimizeBehavior
             )
         }
@@ -667,6 +673,8 @@ public class TabsBarPlugin: CAPPlugin, CAPBridgedPlugin {
         let isPlaying = call.getBool("isPlaying") ?? false
         let artworkUrl = call.getString("artworkUrl")
         let animated = call.getBool("animated") ?? true
+        let progress = call.getDouble("progress").map { CGFloat($0) }
+        let progressColor = ColorUtils.parseColor(call.getString("progressColor"))
 
         DispatchQueue.main.async {
             guard let overlay = self.overlayVC else {
@@ -679,8 +687,25 @@ public class TabsBarPlugin: CAPPlugin, CAPBridgedPlugin {
                 subtitle: subtitle,
                 isPlaying: isPlaying,
                 animated: animated,
-                artworkUrl: artworkUrl
+                artworkUrl: artworkUrl,
+                progress: progress,
+                progressColor: progressColor
             )
+        }
+        call.resolve()
+    }
+
+    /// Updates only the mini-player progress hairline (does not recreate the accessory).
+    @objc func setBottomAccessoryProgress(_ call: CAPPluginCall) {
+        let progress = call.getDouble("progress") ?? -1
+        let progressColor = ColorUtils.parseColor(call.getString("progressColor"))
+
+        DispatchQueue.main.async {
+            guard let overlay = self.overlayVC else {
+                self.handleError(call, message: "Overlay not initialized")
+                return
+            }
+            overlay.setBottomAccessoryProgress(CGFloat(progress), color: progressColor)
         }
         call.resolve()
     }

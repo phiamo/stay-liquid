@@ -84,6 +84,7 @@ final class TabsBarOverlay: UIViewController, UITabBarControllerDelegate {
     // Color configuration
     private var selectedIconColor: UIColor?
     private var unselectedIconColor: UIColor?
+    private var progressColor: UIColor?
 
     private var tabBar: UITabBar { glassTabBarController.tabBar }
 
@@ -183,11 +184,16 @@ final class TabsBarOverlay: UIViewController, UITabBarControllerDelegate {
         visible: Bool,
         selectedIconColor: UIColor? = nil,
         unselectedIconColor: UIColor? = nil,
+        progressColor: UIColor? = nil,
         tabBarMinimizeBehavior: TabBarMinimizeBehavior = .never
     ) {
         self.items = items
         self.selectedIconColor = selectedIconColor
         self.unselectedIconColor = unselectedIconColor
+        if progressColor != nil {
+            self.progressColor = progressColor
+        }
+        accessoryContentView.setProgressColor(self.progressColor)
         idToIndex = Dictionary(uniqueKeysWithValues: items.enumerated().map { ($0.element.id, $0.offset) })
 
         configureGlassTabBar()
@@ -466,12 +472,21 @@ final class TabsBarOverlay: UIViewController, UITabBarControllerDelegate {
         subtitle: String?,
         isPlaying: Bool,
         animated: Bool,
-        artworkUrl: String? = nil
+        artworkUrl: String? = nil,
+        progress: CGFloat? = nil,
+        progressColor: UIColor? = nil
     ) {
         guard #available(iOS 26.0, *) else { return }
         if visible {
             isAccessoryVisible = true
+            if let progressColor {
+                self.progressColor = progressColor
+            }
+            accessoryContentView.setProgressColor(self.progressColor)
             accessoryContentView.update(title: title, subtitle: subtitle, isPlaying: isPlaying, inline: isAccessoryInline())
+            if let progress {
+                accessoryContentView.setProgress(progress)
+            }
             loadArtwork(artworkUrl)
             let accessory = UITabAccessory(contentView: accessoryContentView)
             glassTabBarController.setBottomAccessory(accessory, animated: animated)
@@ -483,9 +498,19 @@ final class TabsBarOverlay: UIViewController, UITabBarControllerDelegate {
             isAccessoryVisible = false
             currentArtworkUrl = nil
             accessoryContentView.setArtwork(nil)
+            accessoryContentView.setProgress(-1)
             glassTabBarController.setBottomAccessory(nil, animated: animated)
             passthroughView?.accessoryContentView = nil
         }
+    }
+
+    /// Cheap progress-only update — does not recreate UITabAccessory.
+    func setBottomAccessoryProgress(_ progress: CGFloat, color: UIColor? = nil) {
+        if let color {
+            progressColor = color
+            accessoryContentView.setProgressColor(color)
+        }
+        accessoryContentView.setProgress(progress)
     }
 
     private func loadArtwork(_ urlString: String?) {

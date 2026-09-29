@@ -62,6 +62,8 @@ export interface TabsBarConfigureOptions {
   selectedIconColor?: string;
   /** Color for unselected tab icons (hex or RGBA format) */
   unselectedIconColor?: string;
+  /** Mini-player progress hairline fill (hex or RGBA). Track uses a translucent version. */
+  progressColor?: string;
   /** iOS 26+ minimize behavior (default `never` — web scroll forwarding not yet wired). */
   tabBarMinimizeBehavior?: TabBarMinimizeBehavior;
 }
@@ -88,6 +90,17 @@ export interface BottomAccessoryOptions {
   animated?: boolean;
   /** Remote http(s), file://, or data URI for accessory artwork. */
   artworkUrl?: string;
+  /** Playback progress 0–1. Omit or pass a negative value to hide the bar. */
+  progress?: number;
+  /** Mini-player progress hairline fill (hex or RGBA). Overrides `TabsBar.configure({ progressColor })`. */
+  progressColor?: string;
+}
+
+export interface BottomAccessoryProgressOptions {
+  /** Playback progress 0–1. Pass a negative value to hide the bar. */
+  progress: number;
+  /** Optional fill color (hex or RGBA). Omit to keep the current color. */
+  progressColor?: string;
 }
 
 export interface TabAccessoryEnvironment {
@@ -115,6 +128,8 @@ export interface TabsBarPlugin {
   getSafeAreaInsets(): Promise<SafeAreaInsets>;
   /** iOS 26+ mini-player slot above the tab bar (Apple Music pattern). */
   setBottomAccessory(options: BottomAccessoryOptions): Promise<void>;
+  /** Cheap progress-only update for the mini-player hairline (0–1). */
+  setBottomAccessoryProgress(options: BottomAccessoryProgressOptions): Promise<void>;
   clearBottomAccessory(options?: { animated?: boolean }): Promise<void>;
   getTabAccessoryEnvironment(): Promise<TabAccessoryEnvironment>;
   getTabBarMetrics(): Promise<TabBarMetrics>;

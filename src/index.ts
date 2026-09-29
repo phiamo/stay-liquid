@@ -15,6 +15,7 @@ export type {
   SelectOptions,
   BadgeValue,
   BottomAccessoryOptions,
+  BottomAccessoryProgressOptions,
   TabAccessoryEnvironment,
   TabBarMetrics,
 } from "./components/tabs/definitions";

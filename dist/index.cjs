@@ -183,13 +183,17 @@ var init_web = __esm({
         if (options.unselectedIconColor && !isValidColor(options.unselectedIconColor)) {
           console.warn(`TabsBar: Invalid unselectedIconColor format: ${options.unselectedIconColor}`);
         }
+        if (options.progressColor && !isValidColor(options.progressColor)) {
+          console.warn(`TabsBar: Invalid progressColor format: ${options.progressColor}`);
+        }
         await this.validateAndPreloadImages(options.items);
         console.log("TabsBar configured with options:", {
           itemCount: options.items.length,
           initialId: options.initialId,
           visible: options.visible,
           hasSelectedColor: !!options.selectedIconColor,
-          hasUnselectedColor: !!options.unselectedIconColor
+          hasUnselectedColor: !!options.unselectedIconColor,
+          hasProgressColor: !!options.progressColor
         });
       }
       async validateAndPreloadImages(items) {
@@ -255,6 +259,9 @@ var init_web = __esm({
       }
       async setBottomAccessory(options) {
         console.log("TabsBar: setBottomAccessory()", options);
+      }
+      async setBottomAccessoryProgress(options) {
+        console.log("TabsBar: setBottomAccessoryProgress()", options);
       }
       async clearBottomAccessory() {
         console.log("TabsBar: clearBottomAccessory()");
